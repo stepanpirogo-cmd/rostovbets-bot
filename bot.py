@@ -1,6 +1,8 @@
 import os
 import json
 import logging
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from math import prod
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -11,6 +13,25 @@ from telegram.ext import (
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# ─── KEEP-ALIVE (чтобы Render не усыплял бота) ────────────────────────────────
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"OK")
+    def log_message(self, format, *args):
+        pass  # не спамим в логи
+
+def run_health_server():
+    port = int(os.environ.get("PORT", 8080))
+    server = HTTPServer(("0.0.0.0", port), HealthHandler)
+    server.serve_forever()
+
+def start_health_server():
+    t = threading.Thread(target=run_health_server, daemon=True)
+    t.start()
+    logger.info("Health server запущен ✅")
 
 # ─── НАСТРОЙКИ ────────────────────────────────────────────────────────────────
 BOT_TOKEN  = os.environ.get("BOT_TOKEN", "ТВОЙ_ТОКЕН_ЗДЕСЬ")
@@ -594,6 +615,7 @@ def main():
     app.add_handler(conv)
     app.add_handler(CallbackQueryHandler(set_result, pattern=r"^(win|loss)_\d+$"))
 
+    start_health_server()
     logger.info("Бот запущен ✅")
     app.run_polling(drop_pending_updates=True)
 
