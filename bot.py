@@ -565,14 +565,120 @@ async def stats_command(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(text, parse_mode="Markdown")
 
+# ─── АКТИВНЫЕ СТАВКИ (/bets) ──────────────────────────────────────────────────
+async def bets_command(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("⛔ Нет доступа.")
+        return
+
+    stats   = load_stats()
+    pending = [b for b in stats["bets"] if b["result"] == "pending"]
+
+    if not pending:
+        await update.message.reply_text(
+            "⏳ *Активных ставок нет*\n\nВсе ставки уже завершены.",
+            parse_mode="Markdown"
+        )
+        return
+
+    text = f"⏳ *Активные ставки ({len(pending)}):*\n━━━━━━━━━━━━━━━━━━━\n"
+    for b in pending:
+        bet_type = b.get("bet_type", "single")
+        amount   = int(b["amount"])
+        odds     = b["odds"]
+        win      = int(round(b["amount"] * b["odds"]))
+        date     = b.get("date", "?")
+        author   = b.get("author", "?")
+
+        if bet_type == "express":
+            label = b.get("express_label", "Экспресс")
+            legs  = b.get("legs", [])
+            legs_str = "\n".join(f"    • {l['name']} к{l['odds']}" for l in legs)
+            text += (
+                f"🔗 *{label}*\n"
+                f"{legs_str}\n"
+                f"📊 Суммарный коэф: `{odds}` | 💰 `{amount:,}` ₽ → 👑 `{win:,}` ₽\n"
+                f"📌 {author} | 🗓 {date}\n"
+                f"━━━━━━━━━━━━━━━━━━━\n"
+            )
+        else:
+            event   = b.get("event", "?")
+            bet_on  = b.get("bet_on", "?")
+            text += (
+                f"🎯 *{event}*\n"
+                f"    • {bet_on}\n"
+                f"📊 Коэф: `{odds}` | 💰 `{amount:,}` ₽ → 👑 `{win:,}` ₽\n"
+                f"📌 {author} | 🗓 {date}\n"
+                f"━━━━━━━━━━━━━━━━━━━\n"
+            )
+
+    await update.message.reply_text(text, parse_mode="Markdown")
+
+# ─── ИСТОРИЯ СТАВОК (/history) ────────────────────────────────────────────────
+async def history_command(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("⛔ Нет доступа.")
+        return
+
+    stats    = load_stats()
+    finished = [b for b in stats["bets"] if b["result"] != "pending"]
+
+    if not finished:
+        await update.message.reply_text(
+            "📊 *История пуста*\n\nЗавершённых ставок ещё нет.",
+            parse_mode="Markdown"
+        )
+        return
+
+    # Показываем последние 20
+    last = list(reversed(finished[-20:]))
+    text = f"📊 *История ставок (последние {len(last)}):*\n━━━━━━━━━━━━━━━━━━━\n"
+
+    for b in last:
+        result   = b["result"]
+        icon     = "✅" if result == "win" else "❌"
+        bet_type = b.get("bet_type", "single")
+        amount   = int(b["amount"])
+        odds     = b["odds"]
+        profit   = int(round(b["amount"] * b["odds"] - b["amount"]))
+        date     = b.get("date", "?")
+        author   = b.get("author", "?")
+
+        if result == "win":
+            result_str = f"+{profit:,} ₽"
+        else:
+            result_str = f"-{amount:,} ₽"
+
+        if bet_type == "express":
+            label = b.get("express_label", "Экспресс")
+            text += (
+                f"{icon} 🔗 *{label}*\n"
+                f"📊 к`{odds}` | 💰 `{amount:,}` ₽ | {result_str}\n"
+                f"📌 {author} | 🗓 {date}\n"
+                f"━━━━━━━━━━━━━━━━━━━\n"
+            )
+        else:
+            event  = b.get("event", "?")
+            bet_on = b.get("bet_on", "?")
+            text += (
+                f"{icon} 🎯 *{event}* — {bet_on}\n"
+                f"📊 к`{odds}` | 💰 `{amount:,}` ₽ | {result_str}\n"
+                f"📌 {author} | 🗓 {date}\n"
+                f"━━━━━━━━━━━━━━━━━━━\n"
+            )
+
+    await update.message.reply_text(text, parse_mode="Markdown")
+
 # ─── ПОМОЩЬ ───────────────────────────────────────────────────────────────────
 async def help_command(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "📖 *Команды бота:*\n\n"
-        "/stavka — новая ставка (ординар или экспресс)\n"
-        "/stats — статистика канала\n"
+        "/stavka — ➕ новая ставка\n"
+        "/bets — ⏳ активные ставки\n"
+        "/history — 📊 история ставок\n"
+        "/stats — 📈 статистика\n"
         "/help — справка\n"
-        "/cancel — отменить текущий ввод",
+        "/cancel — отменить ввод",
         parse_mode="Markdown"
     )
 
@@ -609,9 +715,11 @@ def main():
         fallbacks=[CommandHandler("cancel", cancel)],
     )
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help",  help_command))
-    app.add_handler(CommandHandler("stats", stats_command))
+    app.add_handler(CommandHandler("start",   start))
+    app.add_handler(CommandHandler("help",    help_command))
+    app.add_handler(CommandHandler("stats",   stats_command))
+    app.add_handler(CommandHandler("bets",    bets_command))
+    app.add_handler(CommandHandler("history", history_command))
     app.add_handler(conv)
     app.add_handler(CallbackQueryHandler(set_result, pattern=r"^(win|loss)_\d+$"))
 
