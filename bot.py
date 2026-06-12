@@ -64,7 +64,7 @@ CHANNEL_ID = os.environ.get("CHANNEL_ID", "@ROSTOVBETS")
 ADMIN_IDS  = [int(x) for x in os.environ.get("ADMIN_IDS", "0").split(",") if x]
 STATS_FILE   = "stats.json"
 ACCESS_FILE  = "access.json"
-DONATION_URL = "DONATION_URL = "СБП: +79370943513 (Озон банк)""  # замени на свой
+DONATION_URL = "СБП: +79370943513 (Озон банк)"  # замени на свой
 
 # ─── ТАРИФЫ ───────────────────────────────────────────────────────────────────
 TARIFFS = {
@@ -967,7 +967,7 @@ def main():
                 CallbackQueryHandler(cancel,  pattern="^cancel$"),
             ],
         },
-        fallbacks=[CommandHandler("cancel", cancel)],
+        fallbacks=[CommandHandler("cancel", cancel), CommandHandler("access", access_command)],
     )
 
     access_conv = ConversationHandler(
