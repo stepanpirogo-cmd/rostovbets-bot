@@ -62,7 +62,15 @@ def start_self_ping():
 BOT_TOKEN  = os.environ.get("BOT_TOKEN", "ТВОЙ_ТОКЕН_ЗДЕСЬ")
 CHANNEL_ID = os.environ.get("CHANNEL_ID", "@ROSTOVBETS")
 ADMIN_IDS  = [int(x) for x in os.environ.get("ADMIN_IDS", "0").split(",") if x]
-STATS_FILE = "stats.json"
+STATS_FILE   = "stats.json"
+ACCESS_FILE  = "access.json"
+DONATION_URL = "DONATION_URL = "СБП: +79370943513 (Озон банк)""  # замени на свой
+
+# ─── ТАРИФЫ ───────────────────────────────────────────────────────────────────
+TARIFFS = {
+    "one": {"name": "1 ставка",  "price": 10,  "days": 0, "uses": 1},
+    "week":{"name": "7 дней",    "price": 100, "days": 7, "uses": 999},
+}
 
 # ─── ШАГИ ДИАЛОГА ─────────────────────────────────────────────────────────────
 (
@@ -71,7 +79,9 @@ STATS_FILE = "stats.json"
     EVENT, FIGHTERS, BET_ON, SINGLE_ODDS,
     EXPRESS_COUNT, EXPRESS_AMOUNT, EXPRESS_LEG,
     PHOTO, PREVIEW,
-) = range(11)
+    # доступ
+    ACCESS_TARIFF, ACCESS_SCREENSHOT,
+) = range(13)
 
 # ─── ВИДЫ СПОРТА ──────────────────────────────────────────────────────────────
 SPORTS = {
@@ -110,6 +120,61 @@ def save_stats(data: dict):
 
 def is_admin(uid: int) -> bool:
     return uid in ADMIN_IDS
+# ─── УПРАВЛЕНИЕ ДОСТУПАМИ ─────────────────────────────────────────────────────
+def load_access() -> dict:
+    if os.path.exists(ACCESS_FILE):
+        with open(ACCESS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {"users": {}}
+
+def save_access(data: dict):
+    with open(ACCESS_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+def has_access(uid: int) -> bool:
+    """Проверяет доступ: постоянный админ или временный пользователь"""
+    if uid in ADMIN_IDS:
+        return True
+    access = load_access()
+    user = access["users"].get(str(uid))
+    if not user:
+        return False
+    # по количеству ставок
+    if user.get("uses_left", 0) > 0:
+        return True
+    # по дате
+    if user.get("expires"):
+        from datetime import datetime
+        expires = datetime.fromisoformat(user["expires"])
+        if datetime.now() < expires:
+            return True
+    return False
+
+def use_one_bet(uid: int):
+    """Списывает одну ставку если тариф разовый"""
+    access = load_access()
+    user = access["users"].get(str(uid))
+    if user and user.get("uses_left", 0) > 0 and user.get("tariff") == "one":
+        user["uses_left"] -= 1
+        save_access(access)
+
+def grant_access(uid: int, tariff_key: str, username: str = ""):
+    """Выдаёт доступ пользователю"""
+    access = load_access()
+    tariff = TARIFFS[tariff_key]
+    from datetime import datetime, timedelta
+    user_data = {
+        "uid": uid,
+        "username": username,
+        "tariff": tariff_key,
+        "granted": datetime.now().isoformat(),
+        "uses_left": tariff["uses"] if tariff_key == "one" else 0,
+        "expires": (datetime.now() + timedelta(days=tariff["days"])).isoformat() if tariff["days"] > 0 else None,
+    }
+    access["users"][str(uid)] = user_data
+    save_access(access)
+
+
 
 def get_sport(d: dict) -> dict:
     return SPORTS.get(d.get("sport", "other"), SPORTS["other"])
@@ -226,8 +291,13 @@ async def _ask_sport(obj):
     return SPORT
 
 async def new_bet_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update.effective_user.id):
-        await update.message.reply_text("⛔ Нет доступа.")
+    uid = update.effective_user.id
+    if not has_access(uid):
+        await update.message.reply_text(
+            "⛔ У тебя нет доступа.\n\n"
+            "Используй /access чтобы купить доступ к боту.",
+            parse_mode="Markdown"
+        )
         return ConversationHandler.END
     _init_data(ctx, update.effective_user)
     return await _ask_sport(update.message)
@@ -535,6 +605,10 @@ async def publish(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     stats["bets"].append(record)
     save_stats(stats)
 
+    # Списываем разовую ставку если нужно
+    if not is_admin(d.get("author_id", 0)):
+        use_one_bet(d.get("author_id", 0))
+
     kb = [[
         InlineKeyboardButton("✅ Выиграл",  callback_data=f"win_{msg.message_id}"),
         InlineKeyboardButton("❌ Проиграл", callback_data=f"loss_{msg.message_id}"),
@@ -700,10 +774,156 @@ async def stats_command(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(text, parse_mode="Markdown")
 
+
+# ─── /access — КУПИТЬ ДОСТУП ──────────────────────────────────────────────────
+async def access_command(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    uid = update.effective_user.id
+    if has_access(uid):
+        # Показываем текущий доступ
+        if is_admin(uid):
+            await update.message.reply_text("👑 У тебя постоянный доступ администратора.", parse_mode="Markdown")
+            return ConversationHandler.END
+        access = load_access()
+        user = access["users"].get(str(uid), {})
+        tariff = user.get("tariff", "?")
+        if tariff == "one":
+            left = user.get("uses_left", 0)
+            await update.message.reply_text(f"✅ У тебя есть доступ: *{left} ставок осталось*", parse_mode="Markdown")
+        else:
+            from datetime import datetime
+            expires = datetime.fromisoformat(user["expires"]).strftime("%d.%m.%Y")
+            await update.message.reply_text(f"✅ У тебя есть доступ до *{expires}*", parse_mode="Markdown")
+        return ConversationHandler.END
+
+    kb = [[
+        InlineKeyboardButton("1️⃣ 1 ставка — 10 ₽",  callback_data="tariff_one"),
+        InlineKeyboardButton("📅 7 дней — 100 ₽",    callback_data="tariff_week"),
+    ]]
+    await update.message.reply_text(
+        "🔐 *Доступ к боту @ROSTOVBETS*\n\n"
+        "Выбери тариф:",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(kb)
+    )
+    return ACCESS_TARIFF
+
+async def choose_tariff(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    tariff_key = query.data.replace("tariff_", "")
+    tariff = TARIFFS[tariff_key]
+    ctx.user_data["access_tariff"] = tariff_key
+
+    await query.message.reply_text(
+        f"💳 *Тариф:* {tariff['name']} — {tariff['price']} ₽\n\n"
+        f"1. Переведи *{tariff['price']} ₽* на DonationAlerts:\n"
+        f"👉 {DONATION_URL}\n\n"
+        f"2. В комментарии к донату напиши свой Telegram ID: `{query.from_user.id}`\n\n"
+        f"3. После оплаты отправь сюда *скриншот* оплаты — я передам его владельцу для подтверждения.",
+        parse_mode="Markdown"
+    )
+    return ACCESS_SCREENSHOT
+
+async def get_access_screenshot(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    tariff_key = ctx.user_data.get("access_tariff", "one")
+    tariff = TARIFFS[tariff_key]
+
+    if not update.message.photo:
+        await update.message.reply_text("📸 Отправь скриншот оплаты как фото.")
+        return ACCESS_SCREENSHOT
+
+    photo_id = update.message.photo[-1].file_id
+
+    # Отправляем заявку всем главным админам
+    kb = [[
+        InlineKeyboardButton("✅ Одобрить", callback_data=f"approve_{user.id}_{tariff_key}"),
+        InlineKeyboardButton("❌ Отклонить", callback_data=f"decline_{user.id}"),
+    ]]
+    caption = (
+        f"🔔 *Новая заявка на доступ*\n\n"
+        f"👤 Пользователь: [{user.first_name}](tg://user?id={user.id})\n"
+        f"🆔 ID: `{user.id}`\n"
+        f"📦 Тариф: *{tariff['name']}* — {tariff['price']} ₽\n\n"
+        f"Подтверди оплату:"
+    )
+    for admin_id in ADMIN_IDS:
+        try:
+            await update.get_bot().send_photo(
+                chat_id=admin_id,
+                photo=photo_id,
+                caption=caption,
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup(kb)
+            )
+        except Exception as e:
+            logger.warning(f"Не удалось отправить заявку админу {admin_id}: {e}")
+
+    await update.message.reply_text(
+        "✅ *Заявка отправлена!*\n\n"
+        "Владелец проверит оплату и выдаст доступ. Обычно это занимает несколько минут.",
+        parse_mode="Markdown"
+    )
+    ctx.user_data.clear()
+    return ConversationHandler.END
+
+async def approve_access(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if not is_admin(query.from_user.id):
+        return
+
+    parts = query.data.split("_")
+    uid = int(parts[1])
+    tariff_key = parts[2]
+    tariff = TARIFFS[tariff_key]
+
+    # Получаем username если есть
+    try:
+        member = await ctx.bot.get_chat(uid)
+        username = member.username or member.first_name or str(uid)
+    except:
+        username = str(uid)
+
+    grant_access(uid, tariff_key, username)
+
+    # Уведомляем пользователя
+    if tariff_key == "one":
+        msg = f"🎉 Твой доступ подтверждён!\n\nТариф: *{tariff['name']}*\nИспользуй /stavka чтобы опубликовать ставку."
+    else:
+        from datetime import datetime, timedelta
+        expires = (datetime.now() + timedelta(days=tariff["days"])).strftime("%d.%m.%Y")
+        msg = f"🎉 Твой доступ подтверждён!\n\nТариф: *{tariff['name']}* до {expires}\nИспользуй /stavka чтобы публиковать ставки."
+
+    try:
+        await ctx.bot.send_message(chat_id=uid, text=msg, parse_mode="Markdown")
+    except Exception as e:
+        logger.warning(f"Не удалось уведомить пользователя {uid}: {e}")
+
+    await query.message.reply_text(f"✅ Доступ выдан пользователю `{uid}` — {tariff['name']}", parse_mode="Markdown")
+
+async def decline_access(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if not is_admin(query.from_user.id):
+        return
+
+    uid = int(query.data.split("_")[1])
+    try:
+        await ctx.bot.send_message(
+            chat_id=uid,
+            text="❌ К сожалению, оплата не подтверждена. Если это ошибка — напиши владельцу канала."
+        )
+    except Exception as e:
+        logger.warning(f"Не удалось уведомить пользователя {uid}: {e}")
+
+    await query.message.reply_text(f"❌ Заявка пользователя `{uid}` отклонена.", parse_mode="Markdown")
+
 # ─── /help ────────────────────────────────────────────────────────────────────
 async def help_command(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "📖 *Команды бота:*\n\n"
+        "/access — 🔐 купить доступ\n"
         "/stavka — ➕ новая ставка\n"
         "/bets — ⏳ активные ставки\n"
         "/history — 📊 история ставок\n"
@@ -750,12 +970,24 @@ def main():
         fallbacks=[CommandHandler("cancel", cancel)],
     )
 
+    access_conv = ConversationHandler(
+        entry_points=[CommandHandler("access", access_command)],
+        states={
+            ACCESS_TARIFF:     [CallbackQueryHandler(choose_tariff, pattern="^tariff_")],
+            ACCESS_SCREENSHOT: [MessageHandler(filters.PHOTO, get_access_screenshot)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
+
     app.add_handler(CommandHandler("start",   start))
     app.add_handler(CommandHandler("help",    help_command))
     app.add_handler(CommandHandler("stats",   stats_command))
     app.add_handler(CommandHandler("bets",    bets_command))
     app.add_handler(CommandHandler("history", history_command))
+    app.add_handler(access_conv)
     app.add_handler(conv)
+    app.add_handler(CallbackQueryHandler(approve_access, pattern=r"^approve_\d+_\w+$"))
+    app.add_handler(CallbackQueryHandler(decline_access, pattern=r"^decline_\d+$"))
     app.add_handler(CallbackQueryHandler(set_result, pattern=r"^(win|loss)_\d+$"))
 
     start_health_server()
