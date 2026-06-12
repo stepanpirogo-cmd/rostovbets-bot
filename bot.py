@@ -263,10 +263,24 @@ def sport_keyboard():
 # ─── СТАРТ ────────────────────────────────────────────────────────────────────
 async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    if not is_admin(user.id):
-        await update.message.reply_text("⛔ У тебя нет доступа к боту.")
+
+    if not has_access(user.id):
+        # Незнакомый пользователь — показываем приветствие с кнопкой доступа
+        kb = [[InlineKeyboardButton("🔐 Получить доступ", callback_data="go_access")]]
+        await update.message.reply_text(
+            f"👋 Привет, *{user.first_name}*!\n\n"
+            "Это бот канала @ROSTOVBETS — здесь публикуются ставки на спорт.\n\n"
+            "🎯 Хочешь публиковать свои ставки в канале?\n"
+            "Купи доступ и твои прогнозы увидят все подписчики!\n\n"
+            "💰 *Тарифы:*\n"
+            "• 1 ставка — 10 ₽\n"
+            "• 7 дней безлимит — 100 ₽",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(kb)
+        )
         return
 
+    # Пользователь с доступом
     kb = [[InlineKeyboardButton("➕ Новая ставка", callback_data="new_bet")]]
     await update.message.reply_text(
         f"👋 Привет, *{user.first_name}*!\n\n"
@@ -289,6 +303,20 @@ async def _ask_sport(obj):
         reply_markup=sport_keyboard()
     )
     return SPORT
+
+async def go_access_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    kb = [[
+        InlineKeyboardButton("1️⃣ 1 ставка — 10 ₽",  callback_data="tariff_one"),
+        InlineKeyboardButton("📅 7 дней — 100 ₽",    callback_data="tariff_week"),
+    ]]
+    await query.message.reply_text(
+        "🔐 *Доступ к боту @ROSTOVBETS*\n\nВыбери тариф:",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(kb)
+    )
+    return ACCESS_TARIFF
 
 async def new_bet_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
@@ -971,7 +999,7 @@ def main():
     )
 
     access_conv = ConversationHandler(
-        entry_points=[CommandHandler("access", access_command)],
+        entry_points=[CommandHandler("access", access_command), CallbackQueryHandler(go_access_callback, pattern="^go_access$")],
         states={
             ACCESS_TARIFF:     [CallbackQueryHandler(choose_tariff, pattern="^tariff_")],
             ACCESS_SCREENSHOT: [MessageHandler(filters.PHOTO, get_access_screenshot)],
