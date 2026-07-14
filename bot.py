@@ -87,6 +87,7 @@ TARIFFS = {
 SPORTS = {
     "ufc":        {"emoji": "🥊", "name": "UFC / MMA",   "event": "Турнир",  "match": "Бой",     "teams": "Бойцы"},
     "football":   {"emoji": "⚽", "name": "Футбол",       "event": "Матч",    "match": "Матч",    "teams": "Команды"},
+    "fnl":        {"emoji": "🇷🇺", "name": "ФНЛ",         "event": "Матч",    "match": "Матч",    "teams": "Команды"},
     "hockey":     {"emoji": "🏒", "name": "Хоккей",       "event": "Матч",    "match": "Матч",    "teams": "Команды"},
     "basketball": {"emoji": "🏀", "name": "Баскетбол",    "event": "Матч",    "match": "Матч",    "teams": "Команды"},
     "tennis":     {"emoji": "🎾", "name": "Теннис",       "event": "Турнир",  "match": "Матч",    "teams": "Игроки"},
@@ -190,16 +191,16 @@ def build_single_post(d: dict) -> str:
 
     return (
         f"{sp['emoji']} *{sp['name'].upper()}*\n"
-        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"━━━━━━━━━━━━━━━━\n"
         f"{E['arrow']} *{sp['event']}:* {d.get('event','')}\n"
         f"👥 *{sp['teams']}:* {d.get('fighters','')}\n"
         f"{E['fire']} *Ставка:* {d.get('bet_on','')}\n"
         f"{E['odds']} *Коэффициент:* `{odds}`\n"
         f"{E['money']} *Сумма:* `{int(amount):,}` ₽\n"
-        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"━━━━━━━━━━━━━━━━\n"
         f"{E['crown']} *Выигрыш:* `{int(total):,}` ₽\n"
         f"💵 *Чистая прибыль:* `+{int(profit):,}` ₽\n"
-        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"━━━━━━━━━━━━━━━━\n"
         f"{E['wait']} *Статус:* Ожидаем результат...\n\n"
         f"{E['pin']} *Автор:* {author}"
     )
@@ -221,16 +222,16 @@ def build_express_post(d: dict) -> str:
 
     return (
         f"{E['chain']} *ЭКСПРЕСС | {count} события*\n"
-        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"━━━━━━━━━━━━━━━━\n"
         f"{E['fire']} *События:*\n"
         f"{legs_text}"
-        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"━━━━━━━━━━━━━━━━\n"
         f"{E['odds']} *Суммарный коэф:* `{total_odds}`\n"
         f"{E['money']} *Сумма ставки:* `{int(amount):,}` ₽\n"
-        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"━━━━━━━━━━━━━━━━\n"
         f"{E['crown']} *Выигрыш:* `{int(total):,}` ₽\n"
         f"💵 *Чистая прибыль:* `+{int(profit):,}` ₽\n"
-        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"━━━━━━━━━━━━━━━━\n"
         f"{E['wait']} *Статус:* Ожидаем результат...\n\n"
         f"{E['pin']} *Автор:* {author}"
     )
@@ -246,6 +247,9 @@ def sport_keyboard():
         [
             InlineKeyboardButton("🥊 UFC / MMA",  callback_data="sport_ufc"),
             InlineKeyboardButton("⚽ Футбол",      callback_data="sport_football"),
+        ],
+        [
+            InlineKeyboardButton("🇷🇺 ФНЛ", callback_data="sport_fnl"),
         ],
         [
             InlineKeyboardButton("🏒 Хоккей",     callback_data="sport_hockey"),
